@@ -194,9 +194,9 @@ async def on_message(msg):
 	# TODO: Lookup command for case or player and the history
 
 	elif command == 'dev':
-	"""
-	Developer command. I usually test functions through commands. I leave them in just in-case I'll ever use them again
-	"""
+		"""
+		Developer command. I usually test functions through commands. I leave them in just in-case I'll ever use them again
+		"""
 		if msg.author.id not in constants.devs:
 			return
 
