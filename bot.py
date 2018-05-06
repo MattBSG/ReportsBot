@@ -134,7 +134,7 @@ async def on_message(msg):
     elif command in ['appeal', 'appeals']:
         example = 'Example:\n`!appeal MattBSG ban I am very sorry about my actions on the server and wish to be allowed to come back and enjoy Warzone again. Etc.`'
 
-        if msg.channel.id != constants.wz_appeals and msg.author.id not in constants.devs:
+        if msg.channel.id != constants.wzstaff_discussion or msg.channel.id != constants.wz_appeals and msg.author.id not in constants.devs:
             response = await bot.send_message(msg.channel, constants.redtick + ' You cannot do that here')
             return await expire_msg(15, response, msg)
 
@@ -466,6 +466,8 @@ async def appeals_update(command, args, msg):
         # Accept an appeal submitted by a user
         try:
             reason = args[2]
+            for arg in args[3:]:
+                reason += ' ' + arg
         
         except:
             response = await bot.send_message(msg.channel, constants.redtick + ' You must provide a reason for this action')
@@ -511,6 +513,8 @@ async def appeals_update(command, args, msg):
     elif command == 'deny':
         try:
             reason = args[2]
+            for arg in args[3:]:
+                reason += ' ' + arg
         
         except:
             response = await bot.send_message(msg.channel, constants.redtick + ' You must provide a reason for this action')
