@@ -134,9 +134,10 @@ async def on_message(msg):
     elif command in ['appeal', 'appeals']:
         example = 'Example:\n`!appeal MattBSG ban I am very sorry about my actions on the server and wish to be allowed to come back and enjoy Warzone again. Etc.`'
 
-        if msg.channel.id != constants.wzstaff_discussion or msg.channel.id != constants.wz_appeals and msg.author.id not in constants.devs:
-            response = await bot.send_message(msg.channel, constants.redtick + ' You cannot do that here')
-            return await expire_msg(15, response, msg)
+        if msg.channel.id not in [constants.wzstaff_discussion, constants.wz_appeals]:
+            if msg.author.id not in constants.devs:
+                response = await bot.send_message(msg.channel, constants.redtick + ' You cannot do that here')
+                return await expire_msg(15, response, msg)
 
         # If an exception is raised for any of the following try statements, the arg is invalid and must be handled
         try:
@@ -193,14 +194,14 @@ async def on_message(msg):
         active_list = []
 
         for punishment in puns:
-            if punishment['type'] == pun_type.upper() and not punishment['reverted']:
+            if punishment['type'] == pun_type.upper() and punishment['active']:
                 active_list.append(punishment)
         
         if not active_list:
             response = await bot.send_message(msg.channel, constants.redtick + ' There are no active punishments of this type to appeal for')
             return await expire_msg(15, response, msg)
 
-        # Check if player is linked. If not await a Sr. Mod approval before other staff can appeal
+        # Check if player is linked. If not await a Sr. Mod approval before other staff can review
         needs_verification = True
         for role in msg.author.roles:
             if role.id == constants.linked and msg.author.nick == player:
