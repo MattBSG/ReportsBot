@@ -348,6 +348,29 @@ async def on_message(msg):
             bot_msg = await bot.send_message(msg.channel, ':hourglass: Measuring latency response time...')
             diff = bot_msg.timestamp - msg.timestamp
             await bot.edit_message(bot_msg, 'Pong! Roundtrip was {:.1f}ms.'.format(1000*diff.total_seconds()))
+        
+        if args[0] == 'reopen':
+            try:
+                str(args[1])
+            except:
+                return await bot.send_message(msg.channel, 'You need to specify an appeal')
+            message = await bot.send_message(msg.channel, 'This is likely to break something. Confirming you want to __reopen__ appeal **{}**?'.format(args[1]))
+            await bot.add_reaction(message, '✅')
+            react = await bot.wait_for_reaction(['✅'], message=message, timeout=10, user=msg.author)
+
+            if not react:
+                return await bot.edit_message(message, 'Request timed out waiting for reaction')
+            
+            try:
+                db = mclient.reports.appeals
+                db.update_one({'case': args[1]}, {'$set': {
+                        'closed': False
+                    }})
+            except Exception as e:
+                return await bot.edit_message(message, 'Exception with database: {}'.format(e))
+            
+            await bot.clear_reactions(message)
+            return await bot.edit_message(message, 'Appeal {} has been reopened.'.format(args[1]))
 
         if args[0] == 'rename':
             # Updates the name for the bot account
