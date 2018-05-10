@@ -204,7 +204,7 @@ async def on_message(msg):
         # Check if player is linked. If not await a Sr. Mod approval before other staff can review
         needs_verification = True
         for role in msg.author.roles:
-            if role.id == constants.linked and msg.author.nick == player:
+            if role.id == constants.linked and (msg.author.nick or msg.author.name == player):
                 needs_verification = False
                 break
 
@@ -364,10 +364,11 @@ async def on_message(msg):
             
             try:
                 db = mclient.reports.appeals
-                db.update_one({'case': args[1]}, {'$set': {
+                db.update_one({'case': int(args[1])}, {'$set': {
                         'closed': False
                     }})
             except Exception as e:
+                await bot.clear_reactions(message)
                 return await bot.edit_message(message, 'Exception with database: {}'.format(e))
             
             await bot.clear_reactions(message)
