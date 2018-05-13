@@ -56,12 +56,17 @@ async def on_message(msg):
             response = await bot.send_message(msg.channel, constants.redtick + ' You must provide a player and reason')
             return await expire_msg(15, response, msg)
         try:
-            request_handler('get', u'mc/player/{}'.format(player))['notFound']
+            exists = await request_handler('get', u'mc/player/{}'.format(player))
+            exists['notFound']
             response = await bot.send_message(msg.channel, constants.redtick + ' The provided player has never joined the server')
             return await expire_msg(15, response, msg)
         except KeyError:
             # If this errors, the player in fact does exist. Weird way I know
             pass
+        
+        except RuntimeError:
+            # Raised by request_handler() when it fails after 5 retries
+            return await bot.send_message(msg.channel, constants.redtick + ' An error occured while running this command. If this continues to happen, contact MattBSG')
 
         if msg.channel.id != constants.wz_submit and msg.author.id not in constants.devs:
             response = await bot.send_message(msg.channel, constants.redtick + ' You cannot do that here')
@@ -75,7 +80,7 @@ async def on_message(msg):
         for arg in args[1:]:
             reason += '{} '.format(arg)
 
-        history_list = lookup_puns(player)
+        history_list = await lookup_puns(player)
 
         member = discord.utils.get(msg.server.members, display_name=player)
 
@@ -142,8 +147,8 @@ async def on_message(msg):
         # If an exception is raised for any of the following try statements, the arg is invalid and must be handled
         try:
             if args[0] in ['accept', 'deny', 'approve']:
-                await appeals_update(args[0], args, msg)
-                return
+                return await appeals_update(args[0], args, msg)
+                
 
             else:
                 player = args[0]
@@ -153,9 +158,14 @@ async def on_message(msg):
             return await expire_msg(15, response, msg)
 
         try:
-            request_handler('get', u'mc/player/{}'.format(player))['notFound']
+            exists = await request_handler('get', u'mc/player/{}'.format(player))
+            exists['notFound']
             response = await bot.send_message(msg.channel, constants.redtick + ' The provided player has never joined the server')
             return await expire_msg(15, response, msg)
+
+        except RuntimeError:
+            # Raised by request_handler() when it fails after 5 retries
+            return await bot.send_message(msg.channel, constants.redtick + ' An error occured while running this command. If this continues to happen, contact MattBSG')
 
         except:
             pass
@@ -183,8 +193,13 @@ async def on_message(msg):
             # Built in check to make sure it is not way longer than it needs to be, getting near character limit
             response = await bot.send_message(msg.channel, constants.redtick + ' Your reason is too long, please trim it down and resubmit. Your message will be deleted in 30 seconds if you need to save it')
             return await expire_msg(30, response, msg)
-
-        puns = request_handler('post', 'mc/player/punishments', {'name': player})['punishments']
+        try:
+            puns_list = await request_handler('post', 'mc/player/punishments', {'name': player})
+            puns = puns_list['punishments']
+        
+        except RuntimeError:
+            # Raised by request_handler() when it fails after 5 retries
+            return await bot.send_message(msg.channel, constants.redtick + ' An error occured while running this command. If this continues to happen, contact MattBSG')
 
         if not puns:
             response = await bot.send_message(msg.channel, constants.redtick + ' There are no punishments on record to appeal for')
@@ -257,10 +272,9 @@ async def on_message(msg):
             embed = discord.Embed(title=player, color=0xf6bf55, description='**{}** has submitted an appeal for account **{}**. Once the appeal is ready to be acted upon please run either `!appeals accept {} [reason]` or `!appeals deny {} [reason]`'.format(tag, player, case_num, case_num), timestamp=datetime.datetime.fromtimestamp(int(time.time())))
             embed.add_field(name='Appeal reason:', value=reason)
             embed.add_field(name='Active punishments:', value=active_puns)
-            embed.add_field(name='All punishments:', value=lookup_puns(player))
+            embed.add_field(name='All punishments:', value=puns_list)
             embed.set_thumbnail(url=avatar)
             embed.set_footer(text='Appeal {}'.format(case_num))
-
         appeal = await bot.send_message(bot.get_channel(constants.wzstaff_appeals), embed=embed)
         db_data['appeal_msg'] = appeal.id
 
@@ -397,7 +411,8 @@ async def on_message(msg):
         
         elif args[0] == 'puns':
             # Return the json of puns for a given player
-            return await bot.send_message(msg.channel, 'Here you go:\n\n{}'.format(lookup_puns(args[1])))
+            puns_list = await lookup_puns(args[1])
+            return await bot.send_message(msg.channel, 'Here you go:\n\n{}'.format(puns_list))
 
         elif args[0] == 'roles':
             role_list = ''
@@ -496,7 +511,7 @@ async def appeals_update(command, args, msg):
         
         except:
             response = await bot.send_message(msg.channel, constants.redtick + ' You must provide a reason for this action')
-            return expire_msg(15, response, msg)
+            return await expire_msg(15, response, msg)
 
         for server in bot.servers:
                 for member in server.members:
@@ -509,10 +524,14 @@ async def appeals_update(command, args, msg):
 
         for pun in appeal['active_puns']:
             try:
-                r = request_handler('post', 'mc/player/revert_punishment', {'id': pun['_id']})
+                r = await request_handler('post', 'mc/player/revert_punishment', {'id': pun['_id']})
                 if r['punishment']['reverted'] != True:
                     raise KeyError('Punishment returned unreverted after request')
             
+            except RuntimeError:
+                # Raised by request_handler() when it fails after 5 retries
+                return await bot.send_message(msg.channel, constants.redtick + ' An error occured while running this command. If this continues to happen, contact MattBSG')
+
             except Exception as e:
                 print(u'An exception was raised while reverting a punishment.\n\nServer: {}\nCommand: {}\nOutput: {}'.format(msg.server.name, command, e))
                 return await bot.send_message(msg.channel, constants.redtick + ' An error occurred while processing the command. If this continues please contact a Sr. Mod or Admin')
@@ -543,7 +562,7 @@ async def appeals_update(command, args, msg):
         
         except:
             response = await bot.send_message(msg.channel, constants.redtick + ' You must provide a reason for this action')
-            return expire_msg(15, response, msg)
+            return await expire_msg(15, response, msg)
         
         for server in bot.servers:
                 for member in server.members:
@@ -601,10 +620,12 @@ async def resolve_edit_message(id):
     db = mclient.reports.cases
     case = db.find_one({'report_msg': id})
 
+    puns_list = await lookup_puns(case['reported'])
+
     embed = discord.Embed(title=case['reported'], color=0x3cf62a, description='A report was filed for **{}** by **{}**. This report was marked as resolved by {} at {} UTC.'.format(case['reported'], case['reporter_name'], case['closer_name'], datetime.datetime.utcnow()), timestamp=datetime.datetime.fromtimestamp(case['timestamp']))
     embed.add_field(name='Report reason:', value=case['reason'])
     embed.add_field(name='Resolve reason:', value=case['close_reason'])
-    embed.add_field(name='Past punishments:', value=lookup_puns(case['reported']))
+    embed.add_field(name='Past punishments:', value=puns_list)
     embed.set_thumbnail(url=case['avatar'])
     embed.set_footer(text='Case {}'.format(case['case']))
 
@@ -627,11 +648,13 @@ async def update_appeal_edit(id, type, status=None):
         expires = 'Forever' if pun['expires'] == -1 else datetime.datetime.fromtimestamp(int((pun['expires']) / 1000)).strftime('%d/%m/%y')
         active_puns += '`{}` - `{}`: {} **{}** for **{}**\n'.format(issued, expires, punisher, pun_type, pun['reason'])
 
+    puns_list = await lookup_puns(appeal['player'])
+
     if type == 'approval':
         embed = discord.Embed(title=appeal['player'], color=0xf6bf55, description='**{}** has submitted an appeal for account **{}**. Once the appeal is ready to be acted upon please run either `!appeals accept {} [reason]` or `!appeals deny {} [reason]`'.format(appeal['appealer_name'], appeal['player'], appeal['case'], appeal['case']), timestamp=datetime.datetime.fromtimestamp(appeal['timestamp']))
         embed.add_field(name='Appeal reason:', value=appeal['reason'])
         embed.add_field(name='Active punishments:', value=active_puns)
-        embed.add_field(name='All punishments:', value=lookup_puns(appeal['player']))
+        embed.add_field(name='All punishments:', value=puns_list)
         embed.set_thumbnail(url=appeal['avatar'])
         embed.set_footer(text='Appeal {}'.format(id))
 
@@ -643,7 +666,7 @@ async def update_appeal_edit(id, type, status=None):
         embed = discord.Embed(title=appeal['player'], color=0x3cf62a, description='**{}** submitted an appeal for account **{}**. This appeal was marked as __accepted__ by {} at {} UTC.'.format(appeal['appealer_name'], appeal['player'], appeal['closer_name'], datetime.datetime.utcnow()), timestamp=datetime.datetime.fromtimestamp(appeal['timestamp']))
         embed.add_field(name='Appeal reason:', value=appeal['reason'], inline=True)
         embed.add_field(name='Appeal reviewer', value='**{}** reviewed this appeal with comment: *{}*'.format(appeal['closer_name'], status))
-        embed.add_field(name='All punishments:', value=lookup_puns(appeal['player']))
+        embed.add_field(name='All punishments:', value=puns_list)
         embed.set_thumbnail(url=appeal['avatar'])
         embed.set_footer(text='Appeal {}'.format(id))
 
@@ -655,7 +678,7 @@ async def update_appeal_edit(id, type, status=None):
         embed = discord.Embed(title=appeal['player'], color=0x1594f2, description='**{}** submitted an appeal for account **{}**. This appeal was marked as __denied__ by {} at {} UTC.'.format(appeal['appealer_name'], appeal['player'], appeal['closer_name'], datetime.datetime.utcnow()), timestamp=datetime.datetime.fromtimestamp(appeal['timestamp']))
         embed.add_field(name='Appeal reason:', value=appeal['reason'], inline=True)
         embed.add_field(name='Appeal reviewer', value='**{}** reviewed this appeal with comment: *{}*'.format(appeal['closer_name'], status))
-        embed.add_field(name='All punishments:', value=lookup_puns(appeal['player']))
+        embed.add_field(name='All punishments:', value=puns_list)
         embed.set_thumbnail(url=appeal['avatar'])
         embed.set_footer(text='Appeal {}'.format(id))
 
@@ -666,11 +689,18 @@ async def update_appeal_edit(id, type, status=None):
     else:
         raise KeyError('Appeal edit provided with invalid type. This is a programming error')
 
-def lookup_puns(player):
+async def lookup_puns(player):
     """
     Returns a type(str) formated list of punishments on a given player (assumes already checked if they existed)
     """
-    p_history = request_handler('post', 'mc/player/punishments', {'name': player})['punishments']
+    try:
+        hndl = await request_handler('post', 'mc/player/punishments', {'name': player})
+        p_history = hndl['punishments']
+    
+    except RuntimeError:
+            # Raised by request_handler() when it fails after 5 retries
+            return '*Unable to check at this time. Use the /p command in-game for record*'
+
     if not p_history:
         history_list = '*No previous punishments*'
 
@@ -684,26 +714,47 @@ def lookup_puns(player):
             pun_type = '~~{}~~'.format(pun['type']) if pun['reverted'] else pun['type']
             history_list += '**{}** - {}\n'.format(pun_type, pun['reason'])
 
-        return history_list
+    return history_list
 
-def request_handler(type, endpoint, data={}):
+async def request_handler(type, endpoint, data={}):
     """
     A utility function for posting specific requests
     """
     base = constants.wzhost
     headers = {'x-access-token': constants.wzkey}
-    if type == 'get':
-        r = requests.get(base + endpoint, headers=headers, json=data)
-        r.raise_for_status()
-        return r.json()
+    # Assume errored unless successful, a hotpatch really
+    error = True
+    for x in range(1, 6):
+        try:
+            if type == 'get':
+                r = requests.get(base + endpoint, headers=headers, json=data)
+                r.raise_for_status()
+                response = r.json()
+                error = False
+                break
 
-    elif type == 'post':
-        r = requests.post(base + endpoint, headers=headers, json=data)
-        r.raise_for_status()
-        return r.json()
+            elif type == 'post':
+                r = requests.post(base + endpoint, headers=headers, json=data)
+                r.raise_for_status()
+                response = r.json()
+                error = False
+                break
 
+            else:
+                raise TypeError('Invalid request type provided')
+
+        except TypeError:
+            raise
+
+        except Exception as e:
+            print('Exception in api request. Was attempt {}/5: {}'.format(x, e))
+            await asyncio.sleep(2)
+
+    if error:
+        raise RuntimeError('A request submitted through request_handler() died after 5 tries')
+    
     else:
-        raise TypeError('Invalid request type provided')
+        return response
 
 def mongo_inc(collection):
     """
