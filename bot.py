@@ -84,20 +84,14 @@ async def on_message(msg):
 
         member = discord.utils.get(msg.server.members, display_name=player)
 
-        # Really annoyingly convoluted for the thumbnail image. Essentially: (member with reported name is on discord -> avatar url OR else default avatar) otherwise (reporter avatar OR else default avatar)
-        if member:
-            if member.avatar_url:
-                avatar = member.avatar_url
-
-            else:
-                avatar = member.default_avatar_url
-
-        else:
-            if msg.author.avatar_url:
-                avatar = msg.author.avatar_url
-
-            else:
-                avatar = msg.author.default_avatar_url
+        try:
+            player_obj = await request_handler('get', 'https://api.mojang.com/users/profiles/minecraft/{}'.format(player), wz=False)
+            avatar = 'https://visage.surgeplay.com/frontfull/{}'.format(player_obj['id'])
+        
+        except Exception as e:
+            response = await bot.send_message(msg.channel, constants.redtick + ' An error occured while running this command. If this continues to happen, contact MattBSG')
+            print(e)
+            return await expire_msg(20, response, msg)
 
         db = mclient.reports.cases
         case_num = mongo_inc('cases')
@@ -149,7 +143,6 @@ async def on_message(msg):
             if args[0] in ['accept', 'deny', 'approve']:
                 return await appeals_update(args[0], args, msg)
                 
-
             else:
                 player = args[0]
 
@@ -178,6 +171,12 @@ async def on_message(msg):
 
         except:
             response = await bot.send_message(msg.channel, constants.redtick + ' You must provide a punishment type that you are appealing for. Either "mute" or "ban". ' + example)
+            return await expire_msg(15, response, msg)
+
+        db = mclient.reports.appeals
+        selection = db.find_one({'player': player, 'pun_type': , 'closed': False})
+        if selection:
+            response = await bot.send_message(msg.channel, constants.redtick + ' You already have an appeal of this type awaiting review. Try again later')
             return await expire_msg(15, response, msg)
 
         try:
@@ -228,9 +227,16 @@ async def on_message(msg):
                 ' If you are also banned, please appeal your ban first.')
             return await expire_msg(30, response, msg)
 
-        db = mclient.reports.appeals
         case_num = mongo_inc('appeals')
-        avatar = msg.author.avatar_url if msg.author.avatar_url else msg.author.default_avatar_url
+        try:
+            player_obj = await request_handler('get', 'https://api.mojang.com/users/profiles/minecraft/{}'.format(player), wz=False)
+            avatar = 'https://visage.surgeplay.com/frontfull/{}'.format(player_obj['id'])
+        
+        except Exception as e:
+            response = await bot.send_message(msg.channel, constants.redtick + ' An error occured while running this command. If this continues to happen, contact MattBSG')
+            print(e)
+            return await expire_msg(20, response, msg)
+
         tag = '{}#{}'.format(msg.author.name, msg.author.discriminator)
 
         # Hardcoded db data to populate
@@ -265,9 +271,17 @@ async def on_message(msg):
             for pun in active_list:
                 punisher = 'Console' if pun['punisher'] == None else pun['punisherLoaded']['name']
                 pun_type = 'banned' if pun_type == 'ban' else 'muted'
-                issued = datetime.datetime.fromtimestamp(int((pun['issued'] / 1000))).strftime('%d/%m/%Y') # Imperial time, sorry
-                expires = 'Forever' if pun['expires'] == -1 else datetime.datetime.fromtimestamp(int((pun['expires']) / 1000)).strftime('%d/%m/%y')
+                issued = datetime.datetime.fromtimestamp(int((pun['issued'] / 1000))).strftime('%Y/%m/%d')
+                expires = 'Forever' if pun['expires'] == -1 else datetime.datetime.fromtimestamp(int((pun['expires']) / 1000)).strftime('%Y/%m/%d')
                 active_puns += '`{}` - `{}`: {} **{}** for **{}**\n'.format(issued, expires, punisher, pun_type, pun['reason'])
+                puns_list = await lookup_puns(player)
+
+            print('player' + player)
+            print('reason' + reason)
+            print('active_puns' + active_puns)
+            print('puns_total' + puns_list)
+            print('avatar' + avatar)
+            print('case {}'.format(case_num))
 
             embed = discord.Embed(title=player, color=0xf6bf55, description='**{}** has submitted an appeal for account **{}**. Once the appeal is ready to be acted upon please run either `!appeals accept {} [reason]` or `!appeals deny {} [reason]`'.format(tag, player, case_num, case_num), timestamp=datetime.datetime.fromtimestamp(int(time.time())))
             embed.add_field(name='Appeal reason:', value=reason)
@@ -299,7 +313,7 @@ async def on_message(msg):
 
         except:
             # Will get thrown if the first arg is not a number
-            response = await bot.send_message(msg.channel, constants.redtick + ' You must provide a valid case ID and a reason.\nExample: `!resolve 27 Banned the player`')
+            response = await bot.send_message(msg.channel, constants.redtick + ' You must provide a valid case ID and a reason.\nExample: `!close 27 Banned the player`')
             return await expire_msg(15, response, msg)
 
         try:
@@ -307,7 +321,7 @@ async def on_message(msg):
 
         except:
             # Thrown if the second arg or more does not exist
-            response = await bot.send_message(msg.channel, constants.redtick + ' You must provide a valid case ID and a reason.\nExample: `!resolve 27 Banned the player`')
+            response = await bot.send_message(msg.channel, constants.redtick + ' You must provide a valid case ID and a reason.\nExample: `!close 27 Banned the player`')
             return await expire_msg(15, response, msg)
 
         reason = ''
@@ -332,6 +346,7 @@ async def on_message(msg):
             'closer_name': '{}#{}'.format(msg.author.name, msg.author.discriminator)
         }})
         selection = db.find_one({'case': case_num})
+        tag = '{}#{}'.format(msg.author.name, msg.author.discriminator)
 
         for server in bot.servers:
             for member in server.members:
@@ -342,7 +357,7 @@ async def on_message(msg):
         await resolve_edit_message(selection['report_msg'])
 
         try:
-            await bot.send_message(reporter, 'Your report for **{}** has been reviewed by a staff member.\nComment: `{}`'.format(selection['reported'], selection['close_reason']))
+            await bot.send_message(reporter, 'Your report for **{}** has been reviewed by **{}**.\nComment: `{}`'.format(selection['reported'], tag, selection['close_reason']))
 
         except:
             return await bot.send_message(msg.channel, constants.greentick + ' Successfully marked the report as resolved, however, I was unable to DM the reporter.')
@@ -425,20 +440,6 @@ async def on_message(msg):
             channel = bot.get_channel(constants.wzstaff_reports)
             message = await bot.get_message(channel, 'msg_id')
             await bot.edit_message(message, embed=embed)
-
-        elif args[0] == 'resync':
-            # Very dangerous. Iterates through the database and marks all unclosed cases as closed. Does not run normal resolve logic and operations
-            db = mclient.reports.cases
-            db2 = mclient.reports.cases
-            selection = db.find({'closed': False})
-            avatar = msg.author.default_avatar_url
-            for case in selection:
-                case_num = case['case']
-                await resolve_edit_message(case['report_msg'])
-                db2.update_one({'case': case_num}, {'$set': {
-                    'closed': True
-                }})
-            await bot.send_message(msg.channel, constants.greentick + ' Completed')
 
     else:
         return
@@ -644,8 +645,8 @@ async def update_appeal_edit(id, type, status=None):
     for pun in appeal['active_puns']:
         punisher = 'Console' if pun['punisher'] == None else pun['punisherLoaded']['name']
         pun_type = 'banned' if appeal['pun_type'] == 'ban' else 'muted'
-        issued = datetime.datetime.fromtimestamp(int((pun['issued'] / 1000))).strftime('%d/%m/%Y') # Imperial time, sorry
-        expires = 'Forever' if pun['expires'] == -1 else datetime.datetime.fromtimestamp(int((pun['expires']) / 1000)).strftime('%d/%m/%y')
+        issued = datetime.datetime.fromtimestamp(int((pun['issued'] / 1000))).strftime('%Y/%m/%d')
+        expires = 'Forever' if pun['expires'] == -1 else datetime.datetime.fromtimestamp(int((pun['expires']) / 1000)).strftime('%Y/%m/%d')
         active_puns += '`{}` - `{}`: {} **{}** for **{}**\n'.format(issued, expires, punisher, pun_type, pun['reason'])
 
     puns_list = await lookup_puns(appeal['player'])
@@ -716,25 +717,26 @@ async def lookup_puns(player):
 
     return history_list
 
-async def request_handler(type, endpoint, data={}):
+async def request_handler(type, endpoint, data=None, wz=True):
     """
     A utility function for posting specific requests
     """
-    base = constants.wzhost
-    headers = {'x-access-token': constants.wzkey}
+    base = constants.wzhost if wz == True else endpoint
+    headers = {'x-access-token': constants.wzkey} if wz == True else None
     # Assume errored unless successful, a hotpatch really
     error = True
+    url = base + endpoint if wz == True else endpoint
     for x in range(1, 6):
         try:
             if type == 'get':
-                r = requests.get(base + endpoint, headers=headers, json=data)
+                r = requests.get(url, headers=headers, json=data)
                 r.raise_for_status()
                 response = r.json()
                 error = False
                 break
 
             elif type == 'post':
-                r = requests.post(base + endpoint, headers=headers, json=data)
+                r = requests.post(url, headers=headers, json=data)
                 r.raise_for_status()
                 response = r.json()
                 error = False
@@ -789,7 +791,7 @@ async def check_old():
             if (time.time() - case['timestamp']) >= 43200:
                 # Report is older than 12 hours
                 if not case['late_notified']:
-                    embed = discord.Embed(title=case['reported'], color=0xf6bf55, description='User **{}** filed a report over 12 hours ago against **{}**. Once this has been reviewed you may close this report with `!resolve {} [reason]`'.format(case['reporter_name'], case['reported'], case['case']), timestamp=datetime.datetime.fromtimestamp(case['timestamp']))
+                    embed = discord.Embed(title=case['reported'], color=0xf6bf55, description='User **{}** filed a report over 12 hours ago against **{}**. Once this has been reviewed you may close this report with `!close {} [reason]`'.format(case['reporter_name'], case['reported'], case['case']), timestamp=datetime.datetime.fromtimestamp(case['timestamp']))
                     embed.add_field(name='Reason:', value=case['reason'])
                     embed.set_footer(text='Case {}'.format(case['case']))
                     await bot.send_message(bot.get_channel(constants.wzstaff_discussion), ':exclamation: Report **{}** has been unresolved for 12 hours.\n\nThis is a courtesy reminder for <@&409429605708201995> and <@&405195413440954369>. Details attached:'.format(case['case']), embed=embed) # Hard coded role IDs for jr.mod and mod. TODO: don't do that
