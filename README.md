@@ -1,5 +1,5 @@
 # Discord reporting bot for Minecraft players
-This project was originally designed for the WarzoneMC server and is, for the most part, not going to be compatible elsewhere.
+This project was originally designed for the WarzoneMC server and is, for the most part, not going to be compatible elsewhere. **I will not provide support for this project. If you find a legitimate bug, open an issue and I __may__ fix it eventually**
 
 Some simple setup is required, here's what you'll need:
 * An up-to-date mongodb server
