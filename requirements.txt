@@ -1,2 +1,2 @@
-discord==0.16.12
+discord.py==0.16.12
 mongod
